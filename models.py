@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from db import Database, ModelRecord
 
-SUPPORTED_MODEL_TYPES = frozenset({"openai", "deepseek", "groq"})
+SUPPORTED_MODEL_TYPES = frozenset({"openai", "deepseek", "groq", "openrouter"})
 
 
 @dataclass
@@ -18,9 +18,14 @@ class AIModel:
     name: str
     api_url: str
     api_id_env: str
+    api_model: str
     model_type: str
     is_active: bool
     api_key: str | None = None
+
+    @property
+    def request_model_id(self) -> str:
+        return self.api_model.strip() or self.name
 
     @classmethod
     def from_record(cls, record: ModelRecord, api_key: str | None = None) -> AIModel:
@@ -29,6 +34,7 @@ class AIModel:
             name=record.name,
             api_url=record.api_url,
             api_id_env=record.api_id_env,
+            api_model=record.api_model,
             model_type=record.model_type,
             is_active=record.is_active,
             api_key=api_key,
@@ -76,7 +82,6 @@ def load_active_models(db: Database) -> list[AIModel]:
 
 
 def get_adapter_type(model_type: str) -> str:
-    """Возвращает имя адаптера сети для типа модели."""
     if model_type in SUPPORTED_MODEL_TYPES:
         return "openai_compatible"
     raise ValueError(f"Неподдерживаемый тип модели: {model_type}")
