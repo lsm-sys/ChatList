@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +14,8 @@ from db import Database
 from models import AIModel, get_adapter_type, validate_model
 
 OPENAI_COMPATIBLE_TYPES = frozenset({"openai", "deepseek", "groq", "openrouter"})
+MAX_429_RETRIES = 2
+RETRY_429_DELAY_SEC = 5.0
 
 logger = logging.getLogger("chatlist.network")
 
@@ -31,6 +35,42 @@ def _build_headers(model: AIModel) -> dict[str, str]:
     return headers
 
 
+def _parse_http_error(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+        error = data.get("error", data)
+        if isinstance(error, dict):
+            message = error.get("message", "")
+            metadata = error.get("metadata", {})
+            if isinstance(metadata, dict):
+                raw = metadata.get("raw")
+                if raw and isinstance(raw, str):
+                    message = raw
+            if message:
+                return message
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        pass
+
+    text = response.text.strip()
+    if len(text) > 400:
+        text = text[:400] + "…"
+    return text or f"HTTP {response.status_code}"
+
+
+def _format_http_error(model: AIModel, status_code: int, detail: str) -> str:
+    if status_code == 429:
+        hint = ""
+        if ":free" in model.request_model_id:
+            hint = (
+                " Бесплатные модели OpenRouter часто ограничены по rate limit. "
+                "Отключите модель в «Данные → Модели» или используйте платную версию без :free."
+            )
+        return f"[Ошибка] Лимит запросов (429) для «{model.name}»: {detail}.{hint}"
+    if status_code == 401:
+        return f"[Ошибка] Неверный API-ключ (401) для модели «{model.name}»"
+    return f"[Ошибка] HTTP {status_code} для «{model.name}»: {detail}"
+
+
 def _send_openai_compatible(
     model: AIModel, prompt_text: str, timeout: float
 ) -> tuple[str, bool]:
@@ -41,16 +81,19 @@ def _send_openai_compatible(
         "messages": [{"role": "user", "content": prompt_text}],
     }
 
+    response: httpx.Response | None = None
     with httpx.Client(timeout=timeout) as client:
-        response = client.post(url, headers=headers, json=payload)
+        for attempt in range(MAX_429_RETRIES + 1):
+            response = client.post(url, headers=headers, json=payload)
+            if response.status_code != 429 or attempt >= MAX_429_RETRIES:
+                break
+            time.sleep(RETRY_429_DELAY_SEC)
 
-    if response.status_code == 401:
-        return f"[Ошибка] Неверный API-ключ (401) для модели «{model.name}»", False
+    assert response is not None
+
     if response.status_code >= 400:
-        detail = response.text.strip()
-        if len(detail) > 500:
-            detail = detail[:500] + "…"
-        return f"[Ошибка] HTTP {response.status_code}: {detail}", False
+        detail = _parse_http_error(response)
+        return _format_http_error(model, response.status_code, detail), False
 
     data = response.json()
     try:
@@ -59,25 +102,16 @@ def _send_openai_compatible(
         return f"[Ошибка] Неожиданный формат ответа API: {response.text[:300]}", False
 
 
-def _should_log(db: Database | None) -> bool:
-    if db is None:
-        return False
-    return db.get_setting("log_requests", "0") == "1"
-
-
 def _write_log(
-    db: Database | None,
+    log_enabled: bool,
+    log_file: str,
     model: AIModel,
     prompt_text: str,
     status: str,
     detail: str,
 ) -> None:
-    if not _should_log(db):
+    if not log_enabled:
         return
-
-    log_file = "chatlist.log"
-    if db is not None:
-        log_file = db.get_setting("log_file", log_file) or log_file
 
     timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     prompt_preview = prompt_text.replace("\n", " ")[:120]
@@ -91,17 +125,18 @@ def send_prompt(
     model: AIModel,
     prompt_text: str,
     timeout: float = 60.0,
-    db: Database | None = None,
+    log_enabled: bool = False,
+    log_file: str = "chatlist.log",
 ) -> str:
     errors = validate_model(model)
     if errors:
         message = f"[Ошибка] {'; '.join(errors)}"
-        _write_log(db, model, prompt_text, "validation_error", message)
+        _write_log(log_enabled, log_file, model, prompt_text, "validation_error", message)
         return message
 
     if not prompt_text.strip():
         message = "[Ошибка] Промт пуст"
-        _write_log(db, model, prompt_text, "empty_prompt", message)
+        _write_log(log_enabled, log_file, model, prompt_text, "empty_prompt", message)
         return message
 
     adapter = get_adapter_type(model.model_type)
@@ -109,7 +144,8 @@ def send_prompt(
         try:
             response, ok = _send_openai_compatible(model, prompt_text, timeout)
             _write_log(
-                db,
+                log_enabled,
+                log_file,
                 model,
                 prompt_text,
                 "ok" if ok else "api_error",
@@ -118,15 +154,15 @@ def send_prompt(
             return response
         except httpx.TimeoutException:
             message = f"[Ошибка] Превышено время ожидания ({timeout} с) для «{model.name}»"
-            _write_log(db, model, prompt_text, "timeout", message)
+            _write_log(log_enabled, log_file, model, prompt_text, "timeout", message)
             return message
         except httpx.RequestError as exc:
             message = f"[Ошибка] Сетевая ошибка для «{model.name}»: {exc}"
-            _write_log(db, model, prompt_text, "network_error", str(exc))
+            _write_log(log_enabled, log_file, model, prompt_text, "network_error", str(exc))
             return message
 
     message = f"[Ошибка] Адаптер для типа «{model.model_type}» не реализован"
-    _write_log(db, model, prompt_text, "unsupported", message)
+    _write_log(log_enabled, log_file, model, prompt_text, "unsupported", message)
     return message
 
 

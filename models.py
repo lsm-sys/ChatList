@@ -64,7 +64,46 @@ def validate_model(model: AIModel) -> list[str]:
         errors.append(
             f"Модель «{model.name}»: неподдерживаемый тип API «{model.model_type}»"
         )
+
+    model_id = model.request_model_id
+    if model.model_type == "openrouter":
+        if "/" not in model_id or model_id == model.name or ": " in model_id:
+            errors.append(
+                f"Модель «{model.name}»: неверный ID модели API «{model_id}». "
+                "Укажите slug OpenRouter, например openai/gpt-4o-mini "
+                "(не отображаемое имя с сайта)."
+            )
+        lowered = model_id.lower()
+        if any(
+            token in lowered
+            for token in ("embedding", "embed", "rerank", "moderation")
+        ):
+            errors.append(
+                f"Модель «{model.name}»: «{model_id}» — не chat-модель, "
+                "её нельзя использовать с /chat/completions."
+            )
+
     return errors
+
+
+def validate_api_model_field(model_type: str, api_model: str, name: str) -> str | None:
+    """Проверка поля ID модели API в форме. Возвращает текст ошибки или None."""
+    if model_type != "openrouter":
+        return None
+    model_id = api_model.strip() or name.strip()
+    if "/" not in model_id or model_id == name.strip() or ": " in model_id:
+        return (
+            "Для OpenRouter укажите ID модели в формате provider/model, "
+            "например mistralai/mistral-nemo.\n"
+            "Это не то же самое, что отображаемое имя на сайте OpenRouter."
+        )
+    lowered = model_id.lower()
+    if any(token in lowered for token in ("embedding", "embed", "rerank")):
+        return (
+            f"Модель «{model_id}» предназначена не для чата (embedding/rerank). "
+            "Выберите chat-модель."
+        )
+    return None
 
 
 def load_model(record: ModelRecord) -> AIModel:

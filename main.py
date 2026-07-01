@@ -30,9 +30,16 @@ from PyQt6.QtWidgets import (
 )
 
 from db import Database, Prompt, init_database
-from dialogs import ModelsManagerDialog, PromptsDialog, ResultsDialog, SettingsDialog
+from dialogs import (
+    ModelsManagerDialog,
+    PromptsDialog,
+    ResponseMarkdownDialog,
+    ResultsDialog,
+    SettingsDialog,
+)
 from export_utils import ExportItem, export_to_json, export_to_markdown
 from models import configure_env, load_active_models
+from network import get_request_timeout
 from workers import SendPromptsWorker
 
 
@@ -133,6 +140,14 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(QLabel("Результаты (временная таблица):"))
 
+        results_toolbar = QHBoxLayout()
+        self.open_button = QPushButton("Открыть")
+        self.open_button.setEnabled(False)
+        self.open_button.clicked.connect(self._open_selected_response)
+        results_toolbar.addWidget(self.open_button)
+        results_toolbar.addStretch()
+        layout.addLayout(results_toolbar)
+
         self.results_table = QTableWidget(0, 3)
         self.results_table.setHorizontalHeaderLabels(["Модель", "Ответ", "Выбрать"])
         self.results_table.horizontalHeader().setSectionResizeMode(
@@ -145,12 +160,16 @@ class MainWindow(QMainWindow):
             2, QHeaderView.ResizeMode.ResizeToContents
         )
         self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.results_table.setSortingEnabled(True)
+        self.results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.results_table.setSortingEnabled(False)
         self.results_table.setWordWrap(True)
         self.results_table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
         self.results_table.cellChanged.connect(self._on_cell_changed)
+        self.results_table.itemSelectionChanged.connect(self._update_open_button)
+        self.results_table.cellDoubleClicked.connect(self._on_result_double_clicked)
         layout.addWidget(self.results_table)
 
         self.setStatusBar(QStatusBar())
@@ -193,13 +212,68 @@ class MainWindow(QMainWindow):
         self._temp_results.clear()
         self.results_table.setRowCount(0)
         self.save_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+
+    def _result_for_row(self, row: int) -> TempResult | None:
+        if row < 0:
+            return None
+        item = self.results_table.item(row, 0)
+        if item is None:
+            return None
+        model_id = item.data(Qt.ItemDataRole.UserRole)
+        if model_id is None:
+            return None
+        for result in self._temp_results:
+            if result.model_id == model_id:
+                return result
+        return None
+
+    def _active_row(self) -> int:
+        selected = self.results_table.selectionModel().selectedRows()
+        if selected:
+            return selected[0].row()
+        current = self.results_table.currentRow()
+        if current >= 0:
+            return current
+        return 0 if self._temp_results else -1
+
+    def _update_open_button(self) -> None:
+        self.open_button.setEnabled(len(self._temp_results) > 0)
+
+    def _open_selected_response(self) -> None:
+        if not self._temp_results:
+            QMessageBox.information(self, "Открыть", "Нет результатов для просмотра.")
+            return
+        row = self._active_row()
+        result = self._result_for_row(row)
+        if result is None:
+            QMessageBox.warning(self, "Открыть", "Не удалось найти выбранный ответ.")
+            return
+        self._show_response_dialog(result)
+
+    def _on_result_double_clicked(self, row: int, _column: int) -> None:
+        result = self._result_for_row(row)
+        if result is None:
+            return
+        self._show_response_dialog(result)
+
+    def _show_response_dialog(self, result: TempResult) -> None:
+        dialog = ResponseMarkdownDialog(
+            model_name=result.model_name,
+            response_text=result.response_text,
+            prompt_text=self.prompt_edit.toPlainText(),
+            parent=self,
+        )
+        dialog.exec()
 
     def _refresh_results_table(self) -> None:
         self.results_table.blockSignals(True)
         self.results_table.setSortingEnabled(False)
         self.results_table.setRowCount(len(self._temp_results))
         for row_idx, item in enumerate(self._temp_results):
-            self.results_table.setItem(row_idx, 0, QTableWidgetItem(item.model_name))
+            name_item = QTableWidgetItem(item.model_name)
+            name_item.setData(Qt.ItemDataRole.UserRole, item.model_id)
+            self.results_table.setItem(row_idx, 0, name_item)
             response_item = QTableWidgetItem(item.response_text)
             response_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
@@ -221,17 +295,22 @@ class MainWindow(QMainWindow):
             if self.results_table.rowHeight(row_idx) < min_row_height:
                 self.results_table.setRowHeight(row_idx, min_row_height)
 
-        self.results_table.setSortingEnabled(True)
         self.results_table.blockSignals(False)
+        if self._temp_results:
+            self.results_table.selectRow(0)
         self.save_button.setEnabled(len(self._temp_results) > 0)
+        self._update_open_button()
 
     def _on_cell_changed(self, row: int, column: int) -> None:
-        if column != 2 or row >= len(self._temp_results):
+        if column != 2:
+            return
+        result = self._result_for_row(row)
+        if result is None:
             return
         item = self.results_table.item(row, column)
         if item is None:
             return
-        self._temp_results[row].selected = item.checkState() == Qt.CheckState.Checked
+        result.selected = item.checkState() == Qt.CheckState.Checked
 
     def _on_prompt_changed(self) -> None:
         if self._suppress_prompt_change:
@@ -294,6 +373,10 @@ class MainWindow(QMainWindow):
         self.save_button.setEnabled(False)
 
         self._pending_models = len(models)
+        timeout = get_request_timeout(self.db)
+        log_enabled = self.db.get_setting("log_requests", "0") == "1"
+        log_file = self.db.get_setting("log_file", "chatlist.log") or "chatlist.log"
+
         self._progress = QProgressDialog("Отправка запросов…", "Отмена", 0, self._pending_models, self)
         self._progress.setWindowTitle("ChatList")
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -302,7 +385,14 @@ class MainWindow(QMainWindow):
         self._progress.setValue(0)
         self._progress.show()
 
-        self._worker = SendPromptsWorker(models, prompt.text, self.db, self)
+        self._worker = SendPromptsWorker(
+            models,
+            prompt.text,
+            timeout=timeout,
+            log_enabled=log_enabled,
+            log_file=log_file,
+            parent=self,
+        )
         self._worker.model_finished.connect(self._on_model_finished)
         self._worker.error.connect(self._on_worker_error)
         self._worker.all_finished.connect(self._on_all_finished)

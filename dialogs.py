@@ -18,12 +18,45 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
 from db import Database, ModelRecord, Prompt, Result
-from models import SUPPORTED_MODEL_TYPES
+from models import SUPPORTED_MODEL_TYPES, validate_api_model_field
+
+
+class ResponseMarkdownDialog(QDialog):
+    def __init__(
+        self,
+        model_name: str,
+        response_text: str,
+        prompt_text: str = "",
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Ответ — {model_name}")
+        self.resize(760, 560)
+
+        layout = QVBoxLayout(self)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setMarkdown(_build_response_markdown(model_name, prompt_text, response_text))
+        layout.addWidget(browser)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+
+def _build_response_markdown(model_name: str, prompt_text: str, response_text: str) -> str:
+    parts = [f"# {model_name}", ""]
+    if prompt_text.strip():
+        parts.extend(["## Промт", "", prompt_text.strip(), ""])
+    parts.extend(["## Ответ", "", response_text])
+    return "\n".join(parts)
 
 
 class SearchableTableDialog(QDialog):
@@ -104,7 +137,7 @@ class ModelFormDialog(QDialog):
         self.api_url_edit = QLineEdit(record.api_url if record else "https://openrouter.ai/api/v1")
         self.api_id_env_edit = QLineEdit(record.api_id_env if record else "OPENROUTER_API_KEY")
         self.api_model_edit = QLineEdit(record.api_model if record else "")
-        self.api_model_edit.setPlaceholderText("openai/gpt-4o-mini (для OpenRouter)")
+        self.api_model_edit.setPlaceholderText("openai/gpt-4o-mini")
         self.type_combo = QComboBox()
         self.type_combo.addItems(sorted(SUPPORTED_MODEL_TYPES))
         if record:
@@ -120,6 +153,12 @@ class ModelFormDialog(QDialog):
         form.addRow("API URL:", self.api_url_edit)
         form.addRow("Переменная .env:", self.api_id_env_edit)
         form.addRow("ID модели API:", self.api_model_edit)
+        hint = QLabel(
+            "OpenRouter: slug вида provider/model (см. openrouter.ai/models). "
+            "Не копируйте отображаемое имя."
+        )
+        hint.setWordWrap(True)
+        form.addRow("", hint)
         form.addRow("Тип API:", self.type_combo)
         form.addRow("", self.active_check)
 
@@ -140,6 +179,11 @@ class ModelFormDialog(QDialog):
 
         if not name or not api_url or not api_id_env:
             QMessageBox.warning(self, "Ошибка", "Заполните имя, API URL и переменную .env.")
+            return
+
+        api_model_error = validate_api_model_field(model_type, api_model, name)
+        if api_model_error:
+            QMessageBox.warning(self, "ID модели API", api_model_error)
             return
 
         try:
