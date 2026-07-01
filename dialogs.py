@@ -410,6 +410,10 @@ class ResultsDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSortingEnabled(True)
+        self.table.setWordWrap(True)
+        self.table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         layout.addWidget(self.table)
 
         close_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -446,11 +450,21 @@ class ResultsDialog(QDialog):
                 result.saved_at,
                 model_names.get(result.model_id, str(result.model_id)),
                 prompt_texts.get(result.prompt_id, str(result.prompt_id)),
-                result.response_text[:300],
+                result.response_text,
             ]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col_idx == 0:
                     item.setData(Qt.ItemDataRole.EditRole, result.id)
+                if col_idx == 4:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+                    )
                 self.table.setItem(row_idx, col_idx, item)
+
+        min_row_height = 88
+        for row_idx in range(len(results)):
+            self.table.resizeRowToContents(row_idx)
+            if self.table.rowHeight(row_idx) < min_row_height:
+                self.table.setRowHeight(row_idx, min_row_height)
         self.table.setSortingEnabled(True)

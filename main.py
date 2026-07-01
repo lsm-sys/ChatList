@@ -146,6 +146,10 @@ class MainWindow(QMainWindow):
         )
         self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.results_table.setSortingEnabled(True)
+        self.results_table.setWordWrap(True)
+        self.results_table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         self.results_table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.results_table)
 
@@ -196,7 +200,11 @@ class MainWindow(QMainWindow):
         self.results_table.setRowCount(len(self._temp_results))
         for row_idx, item in enumerate(self._temp_results):
             self.results_table.setItem(row_idx, 0, QTableWidgetItem(item.model_name))
-            self.results_table.setItem(row_idx, 1, QTableWidgetItem(item.response_text))
+            response_item = QTableWidgetItem(item.response_text)
+            response_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            )
+            self.results_table.setItem(row_idx, 1, response_item)
 
             checkbox_item = QTableWidgetItem()
             checkbox_item.setFlags(
@@ -206,6 +214,12 @@ class MainWindow(QMainWindow):
                 Qt.CheckState.Checked if item.selected else Qt.CheckState.Unchecked
             )
             self.results_table.setItem(row_idx, 2, checkbox_item)
+
+        min_row_height = 88
+        for row_idx in range(len(self._temp_results)):
+            self.results_table.resizeRowToContents(row_idx)
+            if self.results_table.rowHeight(row_idx) < min_row_height:
+                self.results_table.setRowHeight(row_idx, min_row_height)
 
         self.results_table.setSortingEnabled(True)
         self.results_table.blockSignals(False)
