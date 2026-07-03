@@ -501,13 +501,14 @@ class MainWindow(QMainWindow):
 
     def show_prompts_dialog(self) -> None:
         dialog = PromptsDialog(self.db, self)
-        if dialog.exec() and dialog.selected_prompt:
+        dialog.exec()
+        self._refresh_prompt_combo()
+        if dialog.selected_prompt:
             self._suppress_prompt_change = True
             self.prompt_edit.setPlainText(dialog.selected_prompt.text)
             self.tags_edit.setText(dialog.selected_prompt.tags or "")
             self._loaded_prompt_text = dialog.selected_prompt.text
             self._current_prompt_id = dialog.selected_prompt.id
-            self._refresh_prompt_combo()
             index = self.prompt_combo.findData(dialog.selected_prompt.id)
             if index >= 0:
                 self.prompt_combo.setCurrentIndex(index)

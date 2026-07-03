@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextBrowser,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -377,43 +378,172 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
+class PromptEditDialog(QDialog):
+    def __init__(
+        self,
+        prompt: Prompt | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Редактировать промт" if prompt else "Добавить промт")
+        self.resize(520, 320)
+
+        layout = QFormLayout(self)
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("Текст промта…")
+        if prompt:
+            self.text_edit.setPlainText(prompt.text)
+        self.tags_edit = QLineEdit()
+        self.tags_edit.setPlaceholderText("python, api (необязательно)")
+        if prompt and prompt.tags:
+            self.tags_edit.setText(prompt.tags)
+
+        layout.addRow("Текст:", self.text_edit)
+        layout.addRow("Теги:", self.tags_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def _save(self) -> None:
+        if not self.text_edit.toPlainText().strip():
+            QMessageBox.warning(self, "Ошибка", "Введите текст промта.")
+            return
+        self.accept()
+
+    def text(self) -> str:
+        return self.text_edit.toPlainText().strip()
+
+    def tags(self) -> str | None:
+        value = self.tags_edit.text().strip()
+        return value or None
+
+
 class PromptsDialog(SearchableTableDialog):
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__("Сохранённые промты", ["ID", "Дата", "Текст", "Теги"], parent)
         self.db = db
-        self.table.doubleClicked.connect(self._use_prompt)
+        self.table.doubleClicked.connect(self._edit_prompt)
         self._prompts: list[Prompt] = []
         self.selected_prompt: Prompt | None = None
 
+        toolbar = QHBoxLayout()
+        add_btn = QPushButton("Добавить")
+        add_btn.clicked.connect(self._add_prompt)
+        edit_btn = QPushButton("Изменить")
+        edit_btn.clicked.connect(self._edit_prompt)
+        delete_btn = QPushButton("Удалить")
+        delete_btn.clicked.connect(self._delete_prompt)
+        refresh_btn = QPushButton("Обновить")
+        refresh_btn.clicked.connect(self.refresh)
         use_btn = QPushButton("Использовать")
         use_btn.clicked.connect(self._use_prompt)
-        self.layout().insertWidget(2, use_btn)
+        for btn in (add_btn, edit_btn, delete_btn, refresh_btn, use_btn):
+            toolbar.addWidget(btn)
+        toolbar.addStretch()
+        self.layout().insertLayout(1, toolbar)
+
+        self.search_edit.textChanged.disconnect(self._apply_filter)
+        self.search_edit.textChanged.connect(self.refresh)
+        self.refresh()
+
+    def _selected_prompt_id(self) -> int | None:
+        rows = self.table.selectionModel().selectedRows()
+        row = rows[0].row() if rows else self.table.currentRow()
+        if row < 0:
+            return None
+        item = self.table.item(row, 0)
+        if item is None or not item.text().isdigit():
+            return None
+        return int(item.text())
+
+    def _get_prompt(self, prompt_id: int) -> Prompt | None:
+        for prompt in self._prompts:
+            if prompt.id == prompt_id:
+                return prompt
+        return self.db.get_prompt(prompt_id)
+
+    def _add_prompt(self) -> None:
+        dialog = PromptEditDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self.db.create_prompt(dialog.text(), dialog.tags())
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось добавить промт:\n{exc}")
+            return
+        self.refresh()
+
+    def _edit_prompt(self) -> None:
+        prompt_id = self._selected_prompt_id()
+        if prompt_id is None:
+            QMessageBox.information(self, "Изменить", "Выберите промт в таблице.")
+            return
+        prompt = self._get_prompt(prompt_id)
+        if prompt is None:
+            return
+        dialog = PromptEditDialog(prompt=prompt, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self.db.update_prompt(prompt_id, dialog.text(), dialog.tags())
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось изменить промт:\n{exc}")
+            return
+        self.refresh()
+
+    def _delete_prompt(self) -> None:
+        prompt_id = self._selected_prompt_id()
+        if prompt_id is None:
+            QMessageBox.information(self, "Удалить", "Выберите промт в таблице.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Удалить",
+            f"Удалить промт #{prompt_id}?\nСвязанные результаты также будут удалены.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.db.delete_prompt(prompt_id)
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось удалить промт:\n{exc}")
+            return
         self.refresh()
 
     def refresh(self) -> None:
         query = self.search_edit.text().strip()
         prompts = self.db.search_prompts(query) if query else self.db.list_prompts()
         self._prompts = prompts
-        self.set_rows(
-            [[str(p.id), p.created_at, p.text, p.tags or ""] for p in prompts]
-        )
+        rows = [[str(p.id), p.created_at, p.text, p.tags or ""] for p in prompts]
+        self._all_rows = rows
+        self._render_rows(rows)
 
-    def _apply_filter(self) -> None:
-        self.refresh()
+    def _render_rows(self, rows: list[list[str]]) -> None:
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(rows))
+        for row_idx, row_data in enumerate(rows):
+            for col_idx, value in enumerate(row_data):
+                item = QTableWidgetItem(value)
+                if col_idx == 0 and value.isdigit():
+                    item.setData(Qt.ItemDataRole.EditRole, int(value))
+                self.table.setItem(row_idx, col_idx, item)
+        self.table.setSortingEnabled(True)
 
     def _use_prompt(self) -> None:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
+        prompt_id = self._selected_prompt_id()
+        if prompt_id is None:
+            QMessageBox.information(self, "Использовать", "Выберите промт в таблице.")
             return
-        item = self.table.item(rows[0].row(), 0)
-        if item is None:
+        prompt = self._get_prompt(prompt_id)
+        if prompt is None:
             return
-        prompt_id = int(item.text())
-        for prompt in self._prompts:
-            if prompt.id == prompt_id:
-                self.selected_prompt = prompt
-                self.accept()
-                return
+        self.selected_prompt = prompt
+        self.accept()
 
 
 class ResultsDialog(QDialog):
