@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
 
 from db import Database, Prompt, init_database
 from dialogs import (
+    AboutDialog,
     ModelsManagerDialog,
     PromptAssistantDialog,
     PromptsDialog,
@@ -42,6 +44,7 @@ from export_utils import ExportItem, export_to_json, export_to_markdown
 from models import configure_env, load_active_models
 from network import get_request_timeout
 from prompt_assistant import GOAL_LABELS, AssistantResult, resolve_assistant_model
+from ui_theme import apply_ui_settings
 from workers import ImprovePromptWorker, SendPromptsWorker
 
 
@@ -94,6 +97,10 @@ class MainWindow(QMainWindow):
         settings_menu = menu_bar.addMenu("Настройки")
         settings_action = settings_menu.addAction("Параметры…")
         settings_action.triggered.connect(self.show_settings_dialog)
+
+        help_menu = menu_bar.addMenu("Справка")
+        about_action = help_menu.addAction("О программе…")
+        about_action.triggered.connect(self.show_about_dialog)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -617,9 +624,18 @@ class MainWindow(QMainWindow):
         dialog = ResultsDialog(self.db, self)
         dialog.exec()
 
+    def apply_ui_settings(self) -> None:
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_ui_settings(app, self.db)
+
     def show_settings_dialog(self) -> None:
         dialog = SettingsDialog(self.db, self)
-        dialog.exec()
+        if dialog.exec():
+            self.apply_ui_settings()
+
+    def show_about_dialog(self) -> None:
+        AboutDialog(self).exec()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._improve_worker and self._improve_worker.isRunning():
@@ -632,11 +648,29 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _app_icon_path() -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / "app.ico"
+
+
+def _load_app_icon() -> QIcon | None:
+    icon_path = _app_icon_path()
+    if icon_path.is_file():
+        return QIcon(str(icon_path))
+    return None
+
+
 def main() -> None:
     configure_env()
     db = init_database()
     app = QApplication(sys.argv)
+    icon = _load_app_icon()
+    if icon is not None:
+        app.setWindowIcon(icon)
+    apply_ui_settings(app, db)
     window = MainWindow(db)
+    if icon is not None:
+        window.setWindowIcon(icon)
     window.show()
     sys.exit(app.exec())
 

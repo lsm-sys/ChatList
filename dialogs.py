@@ -462,6 +462,21 @@ class SettingsDialog(QDialog):
         )
         assistant_hint.setWordWrap(True)
 
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Светлая", "light")
+        self.theme_combo.addItem("Тёмная", "dark")
+        current_theme = db.get_setting("ui_theme", "light") or "light"
+        theme_index = self.theme_combo.findData(current_theme)
+        if theme_index >= 0:
+            self.theme_combo.setCurrentIndex(theme_index)
+
+        self.font_spin = QSpinBox()
+        self.font_spin.setRange(8, 24)
+        self.font_spin.setSuffix(" pt")
+        self.font_spin.setValue(int(db.get_setting("font_size", "10") or "10"))
+
+        form.addRow("Тема:", self.theme_combo)
+        form.addRow("Размер шрифта:", self.font_spin)
         form.addRow("Таймаут запросов:", self.timeout_spin)
         form.addRow("", self.log_check)
         form.addRow("Файл логов:", self.log_file_edit)
@@ -478,6 +493,8 @@ class SettingsDialog(QDialog):
         form.addRow(buttons)
 
     def _save(self) -> None:
+        self.db.set_setting("ui_theme", str(self.theme_combo.currentData()))
+        self.db.set_setting("font_size", str(self.font_spin.value()))
         self.db.set_setting("request_timeout", str(self.timeout_spin.value()))
         self.db.set_setting("log_requests", "1" if self.log_check.isChecked() else "0")
         self.db.set_setting("log_file", self.log_file_edit.text().strip() or "chatlist.log")
@@ -486,6 +503,37 @@ class SettingsDialog(QDialog):
         if model_id is not None:
             self.db.set_setting("assistant_model_id", str(model_id))
         self.accept()
+
+
+class AboutDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("О программе")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        text = QLabel(
+            "<h2>ChatList</h2>"
+            "<p>Приложение для отправки одного промта в несколько нейросетей "
+            "и сравнения их ответов.</p>"
+            "<p><b>Возможности:</b></p>"
+            "<ul>"
+            "<li>отправка промта в активные модели (OpenRouter и др.)</li>"
+            "<li>сохранение и сравнение ответов</li>"
+            "<li>AI-ассистент для улучшения промтов</li>"
+            "<li>экспорт результатов в Markdown и JSON</li>"
+            "</ul>"
+            "<p><b>Стек:</b> Python, PyQt6, SQLite, httpx</p>"
+            "<p>API-ключи хранятся в файле <code>.env</code>, не в базе данных.</p>"
+        )
+        text.setWordWrap(True)
+        text.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(text)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
 
 
 class PromptEditDialog(QDialog):

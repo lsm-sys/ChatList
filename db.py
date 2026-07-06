@@ -57,6 +57,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "log_file": "chatlist.log",
     "assistant_model_id": "",
     "assistant_enabled": "1",
+    "ui_theme": "light",
+    "font_size": "10",
 }
 
 OPENROUTER_DEFAULT_MODELS: list[dict[str, str | bool]] = [
