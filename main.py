@@ -628,6 +628,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             apply_ui_settings(app, self.db)
+            _apply_app_icon(self)
 
     def show_settings_dialog(self) -> None:
         dialog = SettingsDialog(self.db, self)
@@ -649,28 +650,51 @@ class MainWindow(QMainWindow):
 
 
 def _app_icon_path() -> Path:
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return base / "app.ico"
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "app.ico"
+    return Path(__file__).resolve().parent / "app.ico"
 
 
 def _load_app_icon() -> QIcon | None:
     icon_path = _app_icon_path()
-    if icon_path.is_file():
-        return QIcon(str(icon_path))
-    return None
+    if not icon_path.is_file():
+        return None
+    icon = QIcon(str(icon_path))
+    return icon if not icon.isNull() else None
+
+
+def _configure_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ChatList.Application.1")
+    except OSError:
+        pass
+
+
+def _apply_app_icon(window: QWidget | None = None) -> None:
+    icon = _load_app_icon()
+    if icon is None:
+        return
+    app = QApplication.instance()
+    if isinstance(app, QApplication):
+        app.setWindowIcon(icon)
+    if window is not None:
+        window.setWindowIcon(icon)
 
 
 def main() -> None:
     configure_env()
+    _configure_windows_app_id()
     db = init_database()
     app = QApplication(sys.argv)
-    icon = _load_app_icon()
-    if icon is not None:
-        app.setWindowIcon(icon)
+    app.setApplicationName("ChatList")
+    app.setApplicationDisplayName("ChatList")
     apply_ui_settings(app, db)
     window = MainWindow(db)
-    if icon is not None:
-        window.setWindowIcon(icon)
+    _apply_app_icon(window)
     window.show()
     sys.exit(app.exec())
 

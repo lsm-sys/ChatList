@@ -24,6 +24,11 @@ QMenuBar {
     background-color: #2b2b2b;
     color: #e0e0e0;
 }
+QMenuBar::item {
+    background-color: transparent;
+    color: #e0e0e0;
+    padding: 4px 10px;
+}
 QMenuBar::item:selected {
     background-color: #3d3d3d;
 }
@@ -132,3 +137,10 @@ def apply_ui_settings(app: QApplication, db: Database) -> None:
     font = QFont(app.font())
     font.setPointSize(font_size)
     app.setFont(font)
+
+    for widget in app.allWidgets():
+        widget.setFont(font)
+        style = widget.style()
+        style.unpolish(widget)
+        style.polish(widget)
+        widget.update()
