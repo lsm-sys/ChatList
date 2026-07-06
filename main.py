@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 from db import Database, Prompt, init_database
 from dialogs import (
     ModelsManagerDialog,
+    PromptAssistantDialog,
     PromptsDialog,
     ResponseMarkdownDialog,
     ResultsDialog,
@@ -40,7 +41,8 @@ from dialogs import (
 from export_utils import ExportItem, export_to_json, export_to_markdown
 from models import configure_env, load_active_models
 from network import get_request_timeout
-from workers import SendPromptsWorker
+from prompt_assistant import GOAL_LABELS, AssistantResult, resolve_assistant_model
+from workers import ImprovePromptWorker, SendPromptsWorker
 
 
 @dataclass
@@ -60,6 +62,7 @@ class MainWindow(QMainWindow):
         self._suppress_prompt_change = False
         self._loaded_prompt_text = ""
         self._worker: SendPromptsWorker | None = None
+        self._improve_worker: ImprovePromptWorker | None = None
         self._progress: QProgressDialog | None = None
         self._pending_models = 0
 
@@ -108,6 +111,18 @@ class MainWindow(QMainWindow):
         load_btn.clicked.connect(self._refresh_prompt_combo)
         prompt_row.addWidget(load_btn)
         layout.addLayout(prompt_row)
+
+        prompt_toolbar = QHBoxLayout()
+        self.improve_button = QPushButton("Улучшить промт")
+        self.improve_button.clicked.connect(self._on_improve_clicked)
+        prompt_toolbar.addWidget(self.improve_button)
+        prompt_toolbar.addWidget(QLabel("Цель:"))
+        self.goal_combo = QComboBox()
+        for key, label in GOAL_LABELS.items():
+            self.goal_combo.addItem(label, key)
+        prompt_toolbar.addWidget(self.goal_combo)
+        prompt_toolbar.addStretch()
+        layout.addLayout(prompt_toolbar)
 
         layout.addWidget(QLabel("Промт:"))
         self.prompt_edit = QTextEdit()
@@ -461,6 +476,89 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().showMessage(f"Сохранено результатов: {len(selected)}")
 
+    def _on_improve_clicked(self) -> None:
+        text = self.prompt_edit.toPlainText().strip()
+        if not text:
+            QMessageBox.warning(self, "Улучшить промт", "Введите текст промта.")
+            return
+
+        model = resolve_assistant_model(self.db)
+        if model is None:
+            QMessageBox.warning(
+                self,
+                "AI-ассистент",
+                "Ассистент отключён или модель не настроена.\n"
+                "Включите в «Настройки → Параметры» и выберите модель.",
+            )
+            return
+
+        self.improve_button.setEnabled(False)
+        self._progress = QProgressDialog("Улучшаем промт…", "Отмена", 0, 0, self)
+        self._progress.setWindowTitle("ChatList")
+        self._progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self._progress.setMinimumDuration(0)
+        self._progress.canceled.connect(self._cancel_improve_worker)
+        self._progress.show()
+
+        goal = self.goal_combo.currentData()
+        timeout = get_request_timeout(self.db)
+        log_enabled = self.db.get_setting("log_requests", "0") == "1"
+        log_file = self.db.get_setting("log_file", "chatlist.log") or "chatlist.log"
+
+        self._improve_worker = ImprovePromptWorker(
+            model,
+            text,
+            goal=str(goal) if goal else "general",
+            timeout=timeout,
+            log_enabled=log_enabled,
+            log_file=log_file,
+            parent=self,
+        )
+        self._improve_worker.finished.connect(self._on_improve_finished)
+        self._improve_worker.error.connect(self._on_improve_error)
+        self._improve_worker.start()
+        self.statusBar().showMessage("AI-ассистент обрабатывает промт…")
+
+    def _cancel_improve_worker(self) -> None:
+        if self._improve_worker and self._improve_worker.isRunning():
+            self._improve_worker.requestInterruption()
+
+    def _finish_improve_ui(self) -> None:
+        if self._progress:
+            self._progress.close()
+            self._progress = None
+        self.improve_button.setEnabled(True)
+        self._improve_worker = None
+        self.statusBar().showMessage("Готово")
+
+    def _on_improve_error(self, message: str) -> None:
+        self._finish_improve_ui()
+        QMessageBox.warning(self, "AI-ассистент", message)
+
+    def _on_improve_finished(self, result: object) -> None:
+        self._finish_improve_ui()
+        if not isinstance(result, AssistantResult):
+            return
+        if result.error and not result.improved:
+            QMessageBox.warning(self, "AI-ассистент", result.error)
+            return
+
+        dialog = PromptAssistantDialog(result, self)
+        if dialog.exec() and dialog.applied_text:
+            self._apply_improved_prompt(dialog.applied_text)
+
+    def _apply_improved_prompt(self, text: str) -> None:
+        self._suppress_prompt_change = True
+        self.prompt_edit.setPlainText(text)
+        self._loaded_prompt_text = text
+        self._current_prompt_id = None
+        self.prompt_combo.blockSignals(True)
+        self.prompt_combo.setCurrentIndex(0)
+        self.prompt_combo.blockSignals(False)
+        self._clear_temp_results()
+        self._suppress_prompt_change = False
+        self.statusBar().showMessage("Улучшенный промт подставлен в поле ввода")
+
     def _export_results(self, fmt: str) -> None:
         selected = [r for r in self._temp_results if r.selected]
         if not selected:
@@ -524,6 +622,9 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._improve_worker and self._improve_worker.isRunning():
+            self._improve_worker.requestInterruption()
+            self._improve_worker.wait(2000)
         if self._worker and self._worker.isRunning():
             self._worker.requestInterruption()
             self._worker.wait(2000)

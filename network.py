@@ -72,13 +72,20 @@ def _format_http_error(model: AIModel, status_code: int, detail: str) -> str:
 
 
 def _send_openai_compatible(
-    model: AIModel, prompt_text: str, timeout: float
+    model: AIModel,
+    prompt_text: str,
+    timeout: float,
+    system_message: str | None = None,
 ) -> tuple[str, bool]:
     url = f"{_normalize_base_url(model.api_url)}/chat/completions"
     headers = _build_headers(model)
+    messages: list[dict[str, str]] = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": prompt_text})
     payload = {
         "model": model.request_model_id,
-        "messages": [{"role": "user", "content": prompt_text}],
+        "messages": messages,
     }
 
     response: httpx.Response | None = None
@@ -127,6 +134,7 @@ def send_prompt(
     timeout: float = 60.0,
     log_enabled: bool = False,
     log_file: str = "chatlist.log",
+    system_message: str | None = None,
 ) -> str:
     errors = validate_model(model)
     if errors:
@@ -142,7 +150,9 @@ def send_prompt(
     adapter = get_adapter_type(model.model_type)
     if adapter == "openai_compatible" or model.model_type in OPENAI_COMPATIBLE_TYPES:
         try:
-            response, ok = _send_openai_compatible(model, prompt_text, timeout)
+            response, ok = _send_openai_compatible(
+                model, prompt_text, timeout, system_message=system_message
+            )
             _write_log(
                 log_enabled,
                 log_file,

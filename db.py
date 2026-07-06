@@ -55,6 +55,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "request_timeout": "60",
     "log_requests": "0",
     "log_file": "chatlist.log",
+    "assistant_model_id": "",
+    "assistant_enabled": "1",
 }
 
 OPENROUTER_DEFAULT_MODELS: list[dict[str, str | bool]] = [
@@ -176,6 +178,18 @@ class Database:
             )
         self._seed_default_models(conn)
         conn.commit()
+        self._ensure_assistant_default_model()
+
+    def _ensure_assistant_default_model(self) -> None:
+        if self.get_setting("assistant_model_id"):
+            return
+        for record in self.list_models():
+            if record.name == "GPT-4o Mini":
+                self.set_setting("assistant_model_id", str(record.id))
+                return
+        active = self.get_active_models()
+        if active:
+            self.set_setting("assistant_model_id", str(active[0].id))
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(models)").fetchall()}

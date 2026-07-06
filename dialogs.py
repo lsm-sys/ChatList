@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -26,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from db import Database, ModelRecord, Prompt, Result
 from models import SUPPORTED_MODEL_TYPES, validate_api_model_field
+from prompt_assistant import AssistantResult
 
 
 class ResponseMarkdownDialog(QDialog):
@@ -58,6 +60,88 @@ def _build_response_markdown(model_name: str, prompt_text: str, response_text: s
         parts.extend(["## Промт", "", prompt_text.strip(), ""])
     parts.extend(["## Ответ", "", response_text])
     return "\n".join(parts)
+
+
+class PromptAssistantDialog(QDialog):
+    def __init__(
+        self,
+        result: AssistantResult,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.applied_text: str | None = None
+        self.setWindowTitle("AI-ассистент — улучшение промта")
+        self.resize(720, 640)
+
+        root = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        if result.error:
+            error_label = QLabel(result.error)
+            error_label.setWordWrap(True)
+            layout.addWidget(error_label)
+
+        layout.addWidget(self._section_label("Исходный промт"))
+        original = QTextEdit()
+        original.setReadOnly(True)
+        original.setPlainText(result.original)
+        original.setMaximumHeight(100)
+        layout.addWidget(original)
+
+        if result.improved:
+            layout.addWidget(self._section_label("Улучшенный промт"))
+            layout.addWidget(self._text_block(result.improved, "Подставить улучшенный"))
+
+        for index, alt in enumerate(result.alternatives, start=1):
+            layout.addWidget(self._section_label(f"Альтернатива {index}"))
+            layout.addWidget(self._text_block(alt, f"Подставить альтернативу {index}"))
+
+        adaptation_titles = {
+            "code": "Адаптация: код",
+            "analysis": "Адаптация: анализ",
+            "creative": "Адаптация: креатив",
+        }
+        for key, title in adaptation_titles.items():
+            text = result.adaptations.get(key)
+            if text:
+                layout.addWidget(self._section_label(title))
+                layout.addWidget(self._text_block(text, f"Подставить ({title.lower()})"))
+
+        layout.addStretch()
+        scroll.setWidget(container)
+        root.addWidget(scroll)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        root.addWidget(buttons)
+
+    @staticmethod
+    def _section_label(text: str) -> QLabel:
+        label = QLabel(f"<b>{text}</b>")
+        label.setTextFormat(Qt.TextFormat.RichText)
+        return label
+
+    def _text_block(self, text: str, button_label: str) -> QWidget:
+        box = QWidget()
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(0, 0, 0, 0)
+        editor = QTextEdit()
+        editor.setReadOnly(True)
+        editor.setPlainText(text)
+        editor.setMaximumHeight(120)
+        box_layout.addWidget(editor)
+        apply_btn = QPushButton(button_label)
+        apply_btn.clicked.connect(lambda: self._apply(text))
+        box_layout.addWidget(apply_btn)
+        return box
+
+    def _apply(self, text: str) -> None:
+        self.applied_text = text
+        self.accept()
 
 
 class SearchableTableDialog(QDialog):
@@ -359,10 +443,32 @@ class SettingsDialog(QDialog):
         self.db_path_edit = QLineEdit(db.get_setting("db_path", "chatlist.db") or "chatlist.db")
         self.db_path_edit.setReadOnly(True)
 
+        self.assistant_check = QCheckBox("Включить AI-ассистент для улучшения промтов")
+        self.assistant_check.setChecked(db.get_setting("assistant_enabled", "1") == "1")
+
+        self.assistant_model_combo = QComboBox()
+        self._assistant_models: list[ModelRecord] = db.list_models()
+        current_id = db.get_setting("assistant_model_id", "") or ""
+        selected_index = 0
+        for index, model in enumerate(self._assistant_models):
+            self.assistant_model_combo.addItem(model.name, model.id)
+            if str(model.id) == current_id:
+                selected_index = index
+        if self._assistant_models:
+            self.assistant_model_combo.setCurrentIndex(selected_index)
+
+        assistant_hint = QLabel(
+            "Модель для кнопки «Улучшить промт» (один запрос, не массовая отправка)."
+        )
+        assistant_hint.setWordWrap(True)
+
         form.addRow("Таймаут запросов:", self.timeout_spin)
         form.addRow("", self.log_check)
         form.addRow("Файл логов:", self.log_file_edit)
         form.addRow("Файл БД:", self.db_path_edit)
+        form.addRow("", self.assistant_check)
+        form.addRow("Модель ассистента:", self.assistant_model_combo)
+        form.addRow("", assistant_hint)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -375,6 +481,10 @@ class SettingsDialog(QDialog):
         self.db.set_setting("request_timeout", str(self.timeout_spin.value()))
         self.db.set_setting("log_requests", "1" if self.log_check.isChecked() else "0")
         self.db.set_setting("log_file", self.log_file_edit.text().strip() or "chatlist.log")
+        self.db.set_setting("assistant_enabled", "1" if self.assistant_check.isChecked() else "0")
+        model_id = self.assistant_model_combo.currentData()
+        if model_id is not None:
+            self.db.set_setting("assistant_model_id", str(model_id))
         self.accept()
 
 
