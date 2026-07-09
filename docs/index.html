@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ChatList — отправка одного промта в несколько нейросетей и сравнение ответов.">
+  <title>ChatList — сравнение ответов нейросетей</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --accent: #4f8cff;
+      --accent-hover: #3a7af0;
+      --success: #3ecf8e;
+      --radius: 12px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(ellipse at top, #1a2740 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    header {
+      padding: 48px 0 32px;
+      text-align: center;
+    }
+
+    .logo {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 1.15rem;
+      max-width: 560px;
+      margin: 0 auto 24px;
+    }
+
+    .version-badge {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .btn:hover { transform: translateY(-1px); text-decoration: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { background: #243044; color: var(--text); }
+
+    section {
+      margin-bottom: 48px;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .feature h3 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: var(--success);
+    }
+
+    .feature p {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .steps {
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .steps li {
+      counter-increment: step;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px 16px 56px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 18px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    code {
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 0.9em;
+    }
+
+    footer {
+      text-align: center;
+      padding: 32px 0 48px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border);
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img class="logo" src="assets/app-icon.png" alt="ChatList" width="96" height="96">
+      <h1>ChatList</h1>
+      <p class="tagline">
+        Отправьте один промт в несколько нейросетей и сравните ответы в одном окне.
+      </p>
+      <div class="version-badge" id="version">Версия: загрузка…</div>
+      <div class="actions">
+        <a class="btn btn-primary" id="download-installer" href="https://github.com/lsm-sys/ChatList/releases/latest/download/ChatList-Setup-1.0.0.exe">
+          Скачать установщик (Windows)
+        </a>
+        <a class="btn btn-secondary" id="download-portable" href="https://github.com/lsm-sys/ChatList/releases/latest/download/ChatList-1.0.0.exe">
+          Portable .exe
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/lsm-sys/ChatList" target="_blank" rel="noopener">
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <section>
+      <h2>Возможности</h2>
+      <div class="features">
+        <article class="feature">
+          <h3>Мульти-модель</h3>
+          <p>Один промт — параллельные запросы в GPT, Claude, Gemini и другие модели через OpenRouter.</p>
+        </article>
+        <article class="feature">
+          <h3>Сравнение ответов</h3>
+          <p>Результаты в таблице: отметьте лучшие, сохраните в базу или экспортируйте в Markdown / JSON.</p>
+        </article>
+        <article class="feature">
+          <h3>AI-ассистент</h3>
+          <p>Встроенное улучшение промтов перед отправкой — с выбором цели: код, анализ, креатив.</p>
+        </article>
+        <article class="feature">
+          <h3>Локальные данные</h3>
+          <p>Промты, модели и результаты в SQLite. API-ключи только в файле <code>.env</code> на вашем ПК.</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Быстрый старт</h2>
+      <ol class="steps">
+        <li>Скачайте и установите ChatList (или запустите portable-версию).</li>
+        <li>Скопируйте <code>.env.example</code> в <code>.env</code> и укажите <code>OPENROUTER_API_KEY</code>.</li>
+        <li>Введите промт, нажмите <strong>Отправить</strong> — ответы появятся в таблице.</li>
+        <li>Отметьте нужные строки и нажмите <strong>Сохранить</strong>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Для разработчиков</h2>
+      <p style="color: var(--muted); margin-bottom: 12px;">
+        Исходный код открыт (MIT). Запуск из репозитория:
+      </p>
+      <p><code>python -m venv .venv</code> → <code>pip install -r requirements.txt</code> → <code>python main.py</code></p>
+      <p style="margin-top: 12px;">
+        <a href="https://github.com/lsm-sys/ChatList/blob/main/README.md">README</a> ·
+        <a href="https://github.com/lsm-sys/ChatList/blob/main/docs/PUBLISHING.md">Публикация релизов</a> ·
+        <a href="https://github.com/lsm-sys/ChatList/releases">Все релизы</a>
+      </p>
+    </section>
+
+    <footer>
+      <p>ChatList · MIT License · <a href="https://github.com/lsm-sys">lsm-sys</a></p>
+    </footer>
+  </div>
+
+  <script>
+    const REPO = "lsm-sys/ChatList";
+
+    async function loadReleaseInfo() {
+      const versionEl = document.getElementById("version");
+      const installerEl = document.getElementById("download-installer");
+      const portableEl = document.getElementById("download-portable");
+
+      try {
+        const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
+        if (!response.ok) throw new Error("release not found");
+        const release = await response.json();
+        const tag = release.tag_name || "";
+        const version = tag.replace(/^v/, "");
+
+        versionEl.textContent = `Версия: ${version || "—"}`;
+
+        const assets = release.assets || [];
+        const installer = assets.find((a) => /Setup.*\.exe$/i.test(a.name));
+        const portable = assets.find((a) => /^ChatList-[\d.]+\.exe$/i.test(a.name));
+
+        if (installer) installerEl.href = installer.browser_download_url;
+        if (portable) portableEl.href = portable.browser_download_url;
+      } catch {
+        versionEl.textContent = "Версия: 1.0.0";
+      }
+    }
+
+    loadReleaseInfo();
+  </script>
+</body>
+</html>
