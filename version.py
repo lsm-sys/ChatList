@@ -1,7 +1,7 @@
 """Единый источник версии приложения."""
 
 APP_NAME = "ChatList"
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 def app_title() -> str:

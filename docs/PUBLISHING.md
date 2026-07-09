@@ -16,7 +16,7 @@
 | `publish-release.ps1` | Автоматическая публикация релиза |
 | `docs/index.html` | HTML-лендинг для GitHub Pages |
 | `docs/release-notes/TEMPLATE.md` | Шаблон заметок к релизу |
-| `docs/release-notes/v1.0.0.md` | Заметки к текущему релизу |
+| `docs/release-notes/v1.0.1.md` | Заметки к текущему релизу |
 | `.github/workflows/pages.yml` | Автодеплой лендинга при push в `main` |
 
 ---
