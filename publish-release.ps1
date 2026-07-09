@@ -72,8 +72,14 @@ if ($remoteTag) {
 }
 
 Write-Host "Step 4/5: GitHub Release..."
-$releaseExists = gh release view $tag 2>$null
-if ($LASTEXITCODE -eq 0) {
+$releaseExists = $false
+try {
+    gh release view $tag 1>$null 2>$null
+    if ($LASTEXITCODE -eq 0) { $releaseExists = $true }
+} catch {
+    $releaseExists = $false
+}
+if ($releaseExists) {
     Write-Host "  Release $tag exists, uploading assets..."
     gh release upload $tag $installerPath $portablePath --clobber
     gh release edit $tag --notes-file $notesFile
