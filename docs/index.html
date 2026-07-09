@@ -125,28 +125,49 @@
       border-bottom: 1px solid var(--border);
     }
 
+    .features-section {
+      text-align: center;
+    }
+
+    .features-section h2 {
+      display: inline-block;
+      min-width: min(100%, 520px);
+    }
+
     .features {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      max-width: 720px;
+      margin: 0 auto;
     }
 
     .feature {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: 24px 20px;
+      text-align: center;
     }
 
     .feature h3 {
       font-size: 1rem;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       color: var(--success);
     }
 
     .feature p {
       color: var(--muted);
       font-size: 0.95rem;
+      max-width: 280px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 640px) {
+      .features {
+        grid-template-columns: 1fr;
+        max-width: 360px;
+      }
     }
 
     .steps {
@@ -221,7 +242,7 @@
       </div>
     </header>
 
-    <section>
+    <section class="features-section">
       <h2>Возможности</h2>
       <div class="features">
         <article class="feature">
