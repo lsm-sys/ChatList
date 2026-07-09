@@ -109,3 +109,9 @@ python main.py
 - **Настройки → Параметры** — таймаут запросов и логирование в `chatlist.log`.
 
 Подробнее: [PROJECT.md](PROJECT.md), [PLAN.md](PLAN.md), [DATABASE.md](DATABASE.md).
+
+## Публикация
+
+- [Инструкция: GitHub Release и GitHub Pages](docs/PUBLISHING.md)
+- [Лендинг проекта](https://lsm-sys.github.io/ChatList/)
+- Быстрый релиз: `.\publish-release.ps1`
