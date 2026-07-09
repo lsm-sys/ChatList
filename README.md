@@ -114,4 +114,4 @@ python main.py
 
 - [Инструкция: GitHub Release и GitHub Pages](docs/PUBLISHING.md)
 - [Лендинг проекта](https://lsm-sys.github.io/ChatList/)
-- Быстрый релиз: `.\publish-release.ps1`
+- Быстрый релиз: `.\publish-release.ps1` (тег и Release создаются автоматически)

@@ -57,10 +57,18 @@ Set-Content -Path $notesFile -Value $notesBody -Encoding UTF8
 Write-Host "Step 3/5: Git tag $tag..."
 $existingTag = git tag -l $tag
 if ($existingTag) {
-    Write-Host "  Tag $tag already exists, skipping git tag creation."
+    Write-Host "  Tag $tag already exists locally."
 } else {
     git tag -a $tag -m "$appName $version"
-    Write-Host "  Created tag $tag (push with: git push origin $tag)"
+    Write-Host "  Created local tag $tag."
+}
+
+$remoteTag = git ls-remote --tags origin "refs/tags/$tag"
+if ($remoteTag) {
+    Write-Host "  Tag $tag already exists on origin."
+} else {
+    git push origin $tag
+    Write-Host "  Pushed tag $tag to origin."
 }
 
 Write-Host "Step 4/5: GitHub Release..."
