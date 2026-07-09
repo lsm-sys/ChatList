@@ -12,6 +12,7 @@ import httpx
 
 from db import Database
 from models import AIModel, get_adapter_type, validate_model
+from version import __version__
 
 OPENAI_COMPATIBLE_TYPES = frozenset({"openai", "deepseek", "groq", "openrouter"})
 MAX_429_RETRIES = 2
@@ -123,8 +124,15 @@ def _write_log(
     timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     prompt_preview = prompt_text.replace("\n", " ")[:120]
     line = (
-        f"{timestamp}\t{model.name}\t{status}\t{prompt_preview}\t{detail[:200]}\n"
+        f"{timestamp}\tv{__version__}\t{model.name}\t{status}\t"
+        f"{prompt_preview}\t{detail[:200]}\n"
     )
+    Path(log_file).open("a", encoding="utf-8").write(line)
+
+
+def write_log_header(log_file: str) -> None:
+    timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    line = f"{timestamp}\tv{__version__}\tstartup\tok\tChatList application started\n"
     Path(log_file).open("a", encoding="utf-8").write(line)
 
 

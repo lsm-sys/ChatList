@@ -42,7 +42,8 @@ from dialogs import (
 )
 from export_utils import ExportItem, export_to_json, export_to_markdown
 from models import configure_env, load_active_models
-from network import get_request_timeout
+from network import get_request_timeout, write_log_header
+from version import APP_NAME, __version__, app_title
 from prompt_assistant import GOAL_LABELS, AssistantResult, resolve_assistant_model
 from ui_theme import apply_ui_settings
 from workers import ImprovePromptWorker, SendPromptsWorker
@@ -69,7 +70,7 @@ class MainWindow(QMainWindow):
         self._progress: QProgressDialog | None = None
         self._pending_models = 0
 
-        self.setWindowTitle("ChatList")
+        self.setWindowTitle(app_title())
         self.setMinimumSize(900, 640)
         self._build_menu()
         self._build_ui()
@@ -400,7 +401,7 @@ class MainWindow(QMainWindow):
         log_file = self.db.get_setting("log_file", "chatlist.log") or "chatlist.log"
 
         self._progress = QProgressDialog("Отправка запросов…", "Отмена", 0, self._pending_models, self)
-        self._progress.setWindowTitle("ChatList")
+        self._progress.setWindowTitle(app_title())
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress.setMinimumDuration(0)
         self._progress.canceled.connect(self._cancel_worker)
@@ -501,7 +502,7 @@ class MainWindow(QMainWindow):
 
         self.improve_button.setEnabled(False)
         self._progress = QProgressDialog("Улучшаем промт…", "Отмена", 0, 0, self)
-        self._progress.setWindowTitle("ChatList")
+        self._progress.setWindowTitle(app_title())
         self._progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress.setMinimumDuration(0)
         self._progress.canceled.connect(self._cancel_improve_worker)
@@ -689,9 +690,13 @@ def main() -> None:
     configure_env()
     _configure_windows_app_id()
     db = init_database()
+    if db.get_setting("log_requests", "0") == "1":
+        log_file = db.get_setting("log_file", "chatlist.log") or "chatlist.log"
+        write_log_header(log_file)
     app = QApplication(sys.argv)
-    app.setApplicationName("ChatList")
-    app.setApplicationDisplayName("ChatList")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationVersion(__version__)
     apply_ui_settings(app, db)
     window = MainWindow(db)
     _apply_app_icon(window)

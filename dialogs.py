@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 from db import Database, ModelRecord, Prompt, Result
 from models import SUPPORTED_MODEL_TYPES, validate_api_model_field
 from prompt_assistant import AssistantResult
+from version import APP_NAME, __version__
 
 
 class ResponseMarkdownDialog(QDialog):
@@ -513,7 +514,8 @@ class AboutDialog(QDialog):
 
         layout = QVBoxLayout(self)
         text = QLabel(
-            "<h2>ChatList</h2>"
+            f"<h2>{APP_NAME}</h2>"
+            f"<p><b>Версия:</b> {__version__}</p>"
             "<p>Приложение для отправки одного промта в несколько нейросетей "
             "и сравнения их ответов.</p>"
             "<p><b>Возможности:</b></p>"

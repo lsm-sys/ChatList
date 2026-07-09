@@ -74,14 +74,18 @@ python main.py
 
 Список моделей OpenRouter: https://openrouter.ai/models
 
-## Сборка exe
+## Сборка
+
+Версия задаётся в `version.py` (`__version__`) и подставляется в exe, установщик и интерфейс автоматически.
 
 ```powershell
-pip install pyinstaller
-pyinstaller --onefile --windowed --name ChatList main.py
+.\build.ps1
 ```
 
-Исполняемый файл: `dist\ChatList.exe`
+Результат:
+
+- `dist\ChatList-<версия>.exe` — исполняемый файл
+- `dist\ChatList-Setup-<версия>.exe` — установщик (если установлен [Inno Setup](https://jrsoftware.org/isinfo.php))
 
 Положите рядом с exe файлы `.env` и при необходимости `chatlist.db`.
 
@@ -90,6 +94,7 @@ pyinstaller --onefile --windowed --name ChatList main.py
 | Файл | Назначение |
 |------|------------|
 | `main.py` | GUI |
+| `version.py` | Версия приложения (`__version__`) |
 | `db.py` | SQLite |
 | `models.py` | Конфигурация нейросетей |
 | `network.py` | HTTP-запросы к API |
